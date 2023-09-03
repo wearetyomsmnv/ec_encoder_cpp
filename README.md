@@ -6,7 +6,7 @@ g++
 if not install
 
 ```bash
-apt install g++
+sudo apt install g++
 ```
 
 openssl v3.1
@@ -15,8 +15,10 @@ sliver(or other c2)
 
 libssl-dev 
 
+if not install
+
 ```bash
-libssl-dev
+sudo apt install libssl-dev
 ```
 
 **Подготовка**
